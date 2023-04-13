@@ -1,0 +1,7 @@
+environment_base_dir: "{{ ansible_env.HOME }}/trento-env"
+web_base_dir: "{{ environment_base_dir }}/web"
+wanda_base_dir: "{{ environment_base_dir }}/wanda"
+web_repository: "https://github.com/trento-project/web"
+web_revision: main
+wanda_revision: main
+wanda_repository: "https://github.com/trento-project/wanda"

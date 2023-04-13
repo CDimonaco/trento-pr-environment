@@ -1,0 +1,150 @@
+# code: language=ansible
+---
+- name: Configure environment
+  hosts: all
+  tasks:
+    - name: Add zypper repos
+      become: true
+      loop:
+        - https://download.opensuse.org/repositories/devel:languages:erlang/15.4/devel:languages:erlang.repo
+        - https://download.opensuse.org/repositories/devel:languages:rust/15.4/devel:languages:rust.repo
+        - https://download.opensuse.org/repositories/devel:languages:nodejs/15.4/devel:languages:nodejs.repo
+      community.general.zypper_repository:
+        repo: "{{ item }}"
+        enabled: true
+
+    - name: Install installation prerequisites
+      become: true
+      community.general.zypper:
+        name:
+          - gcc
+          - python3-devel
+          - sudo
+          - git
+          - erlang
+          - elixir
+          - rust
+          - cargo
+          - python3-docker-compose
+          - nodejs18
+          - npm18
+        update_cache: true
+
+    - name: Install python prerequisites
+      become: true
+      community.general.zypper:
+        name:
+          - python3-setuptools
+          - python3-pip
+        state: present
+        update_cache: true
+
+    - name: Install docker
+      become: true
+      community.general.zypper:
+        name: docker
+        state: present
+        update_cache: true
+
+    - name: Start docker service
+      become: true
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Make environment directories
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+
+    - name: Clone the projects
+      loop:
+        - { src: "{{ web_repository }}", dst: "{{ web_base_dir }}", rev: "{{ web_revision }}" }
+        - { src: "{{ wanda_repository }}", dst: "{{ wanda_base_dir }}", rev: "{{ wanda_revision }}" }
+      ansible.builtin.git:
+        repo: "{{ item.src }}"
+        dest: "{{ item.dst }}"
+        version: "{{ item.rev }}"
+        force: true
+
+- name: Setup projects
+  hosts: all
+  tasks:
+    - name: Install hex
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix local.hex --force"
+
+    - name: Fetch dependencies
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix deps.get"
+
+    - name: Install rebar
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix local.rebar --force"
+
+    - name: Compiling dependencies
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix deps.compile"
+
+    - name: Npm install
+      changed_when: true
+      ansible.builtin.command:
+        chdir: "{{ web_base_dir }}/assets"
+        cmd: "npm i"
+
+    - name: Compile applications
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix compile"
+
+    - name: Start compose containers
+      become: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      community.docker.docker_compose:
+        project_src: "{{ item }}"
+
+    - name: Setup projects
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix setup"
+
+    - name: Start web project phoenix dev server
+      changed_when: true
+      ansible.builtin.command:
+        chdir: "{{ web_base_dir }}"
+        cmd: 'elixir --erl "-detached" -S mix phx.server'
