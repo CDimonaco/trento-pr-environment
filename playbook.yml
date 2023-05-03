@@ -91,7 +91,7 @@
         - "{{ wanda_base_dir }}"
       ansible.builtin.command:
         chdir: "{{ item }}"
-        cmd: "mix deps.get"
+        cmd: "mix deps.get --prod"
 
     - name: Install rebar
       changed_when: true
@@ -102,14 +102,14 @@
         chdir: "{{ item }}"
         cmd: "mix local.rebar --force"
 
-    - name: Compiling dependencies
-      changed_when: true
-      loop:
-        - "{{ web_base_dir }}"
-        - "{{ wanda_base_dir }}"
-      ansible.builtin.command:
-        chdir: "{{ item }}"
-        cmd: "mix deps.compile"
+    # - name: Compiling dependencies
+    #   changed_when: true
+    #   loop:
+    #     - "{{ web_base_dir }}"
+    #     - "{{ wanda_base_dir }}"
+    #   ansible.builtin.command:
+    #     chdir: "{{ item }}"
+    #     cmd: "mix deps.compile"
 
     - name: Npm install
       changed_when: true
@@ -117,14 +117,11 @@
         chdir: "{{ web_base_dir }}/assets"
         cmd: "npm i"
 
-    - name: Compile applications
+    - name: Build assets
       changed_when: true
-      loop:
-        - "{{ web_base_dir }}"
-        - "{{ wanda_base_dir }}"
       ansible.builtin.command:
-        chdir: "{{ item }}"
-        cmd: "mix compile"
+        chdir: "{{ web_base_dir }}"
+        cmd: "mix phx.digest"
 
     - name: Start compose containers
       become: true
@@ -143,8 +140,17 @@
         chdir: "{{ item }}"
         cmd: "mix setup"
 
-    - name: Start web project phoenix dev server
+    - name: Create mix releases
+      changed_when: true
+      loop:
+        - "{{ web_base_dir }}"
+        - "{{ wanda_base_dir }}"
+      ansible.builtin.command:
+        chdir: "{{ item }}"
+        cmd: "mix release --overwrite"
+      
+    - name: Start web project
       changed_when: true
       ansible.builtin.command:
         chdir: "{{ web_base_dir }}"
-        cmd: 'elixir --erl "-detached" -S mix phx.server'
+        cmd: './_build/dev/rel/trento/bin/trento daemon'
